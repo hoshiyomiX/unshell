@@ -15,12 +15,14 @@ This is the **testing branch** with experimental improvements for SSC deobfuscat
 - **🛡️ Enhanced Protection Bypass**: Handles segmented decryption (-S flag) and random keys (-r flag)
 - **📊 Smarter Detection**: Validates captured scripts and provides better error messages
 - **🔄 Renamed Binary**: Now called `unssc` to prevent Termux package conflicts
+- **🆕 Generic Binary Handler**: NEW! Automatically handles stripped ELF binaries and unknown compilers
 
 ## Features
 - Zero configuration: There's no need for any configuration
 - Penetrate: Multi-layered obfuscation is not a problem
 - Easy to use: just `unssc -f encrypted1 encrypted2` in cmd
 - Fast detection: Pattern-based obfuscation identification
+- Smart fallback: Handles unknown compilers and stripped binaries automatically
 
 ## Supported obfuscation method
 <details>
@@ -45,6 +47,30 @@ SSC uses C++ to encrypt scripts with RC4 cipher and pipes the decrypted content 
   - CRC32 checksum verification
 
 **Requirements:** `strace`, `timeout`, `awk`, `grep`
+</details>
+
+<details>
+<summary>Generic Binary (Stripped/Unknown Compilers) - NEW 🆕</summary>
+
+Fallback handler for ELF binaries without recognizable signatures. Works with:
+- Stripped SSC/SHC binaries (no debug symbols)
+- Custom shell script compilers
+- Binaries compiled with Android NDK r29+
+- Unknown obfuscation tools with shell execution patterns
+
+**How it works:**
+1. Detects ELF executables with shell wrapper characteristics (`pipe2`, `fork`, `execvp`, `environ`)
+2. Tries multiple capture methods:
+   - Write() syscall interception (SSC-style)
+   - Execve() cmdline capture (SHC-style)
+3. Validates and extracts decrypted scripts
+
+**Example binaries it handles:**
+- Android NDK compiled wrappers
+- Custom encryption tools
+- Proprietary script obfuscators
+
+**Requirements:** `strace`, `timeout`, `file`
 </details>
 
 <details>
@@ -133,21 +159,22 @@ chmod +x $spath/unshell
 - `strings` - for binary pattern detection
 - `curl` - for downloads
 - `grep`, `sed`, `awk` - for text processing
+- `file` - for binary type detection
 
 **Optional (for specific obfuscation types):**
-- `strace` - for SSC, SHC, Ri-crypt deobfuscation
+- `strace` - for SSC, SHC, Ri-crypt, and generic binary deobfuscation
 - `timeout` - for SSC timeout handling (part of `coreutils`)
 - `shfmt` - for TPP Tool and comment removal
 - `bzip2` - for bzip2-obfuscated scripts
 
 Install on Debian/Ubuntu:
 ```bash
-sudo apt install strace coreutils gawk grep sed curl binutils shfmt bzip2
+sudo apt install strace coreutils gawk grep sed curl binutils file shfmt bzip2
 ```
 
 Install on Termux:
 ```bash
-pkg install strace coreutils gawk grep sed curl binutils shfmt bzip2
+pkg install strace coreutils gawk grep sed curl binutils file shfmt bzip2
 ```
 
 ## Usage
@@ -202,6 +229,11 @@ unssc -r .
 unssc -v -f obfuscated.sh
 ```
 
+**Deobfuscate stripped Android binary:**
+```bash
+unssc -f /system/bin/custom_script
+```
+
 **Update to latest version:**
 ```bash
 unssc -U
@@ -215,6 +247,7 @@ unssc -U
 - Test in isolated environments (containers, VMs) when dealing with unknown scripts
 - Review the output before executing deobfuscated scripts
 - Be aware that malicious scripts can detect analysis environments
+- The generic binary handler also executes binaries - use with caution!
 
 ## Technical Details
 
@@ -230,6 +263,24 @@ The testing branch uses an improved approach for SSC:
 
 This method works because SSC must write the decrypted script to a pipe before the interpreter can execute it, and strace intercepts this at the kernel level before anti-debugging checks complete.
 
+### Generic Binary Handler
+New fallback system for unknown/stripped binaries:
+
+**Detection Criteria:**
+- Must be an ELF executable
+- Contains shell wrapper indicators: `pipe2`, `fork`, `execvp`, `environ`
+
+**Deobfuscation Process:**
+1. **Primary Method**: Capture write() syscalls (works for SSC-style binaries)
+2. **Fallback Method**: Capture execve() cmdline (works for SHC-style binaries)
+3. **Validation**: Ensures captured data is a valid shell script
+
+**Use Cases:**
+- Stripped binaries compiled with Android NDK
+- Custom shell script compilers without signatures
+- Proprietary obfuscation tools
+- Modified SSC/SHC variants
+
 ## Troubleshooting
 
 **SSC deobfuscation fails:**
@@ -237,6 +288,17 @@ This method works because SSC must write the decrypted script to a pipe before t
 - Try verbose mode: `unssc -v -f script.sh`
 - Check if binary is heavily protected with `-u` flag (anti-debugging)
 - Some SSC binaries with extreme protection may still be difficult to deobfuscate
+
+**Generic binary handler activated but fails:**
+- Binary might have advanced anti-debugging protections
+- Try different delay values with `-d` flag for execve method
+- Check if `file` command properly detects the binary
+- Some proprietary tools might use custom IPC methods not based on pipes
+
+**"ELF binary detected but doesn't appear to be a shell script wrapper":**
+- The binary doesn't have typical shell execution patterns
+- It might be a regular executable, not a script wrapper
+- Check with: `strings binary | grep -E 'pipe|fork|exec'`
 
 **Command not found:**
 ```bash
