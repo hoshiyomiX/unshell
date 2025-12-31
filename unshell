@@ -2,32 +2,8 @@
 
 ulimit -s unlimited >/dev/null 2>&1
 
-show_usage_unshell() {
-	printf "%s - Deobfuscate any shell scripts with multiple methods
-  Usage: %s [OPTIONS] [FILE]
-  Usage: %s [OPTIONS] [DIR]
-
-  Options:
-    -h, --help
-      print this message
-    -f, --file [FILE]
-      Scripts you wanted to deobfuscate, multi input is supported
-    -r, --recursive [DIR]
-      Recursively find and deobfuscate all files in the specified directory
-    -v, --verbose
-      Be verbose
-    -d, --execve-delay [SECOND]
-      Set custom execve delay time in seconds for SHC and SSC encryption
-    -U, --update
-      Update the script
-
-  Example usages:
-    %s -f install.sh menu.sh
-    %s -v -f /system/bin/gaming_script
-    %s -d 6.018 -f ./VTK
-    %s -r .
-    \n" "${0##*/}" "${0##*/}" "${0##*/}" "${0##*/}" "${0##*/}" "${0##*/}" "${0##*/}"
-	exit 0
+show_usage() {
+	printf "%s - Deobfuscate any shell scripts with multiple methods\n  Usage: %s [OPTIONS] [FILE]\n  Usage: %s [OPTIONS] [DIR]\n\n  Options:\n    -h, --help\n      print this message\n    -f, --file [FILE]\n      Scripts you wanted to deobfuscate, multi input is supported\n    -r, --recursive [DIR]\n      Recursively find and deobfuscate all files in the specified directory\n    -v, --verbose\n      Be verbose\n    -d, --execve-delay [SECOND]\n      Set custom execve delay time in seconds for SHC encryption (not used for SSC)\n    -U, --update\n      Update the script\n\n  Example usages:\n    %s -f install.sh menu.sh\n    %s -v -f /system/bin/gaming_script\n    %s -d 6.018 -f ./VTK\n    %s -r .\n    \n" "${0##*/}" "${0##*/}" "${0##*/}" "${0##*/}" "${0##*/}" "${0##*/}" "${0##*/}"\n	exit 0
 }
 
 update_script() {
@@ -40,7 +16,7 @@ update_script() {
 	fi
 
 	# Download the latest version
-	if ! curl -Lo "$temp" https://github.com/Rem01Gaming/unshell/raw/main/unshell; then
+	if ! curl -Lo "$temp" https://github.com/hoshiyomiX/unshell/raw/testing/unshell; then
 		rm -f "$temp"
 		echo "error: failed to download update script"
 		exit 1
@@ -288,6 +264,68 @@ decrypt_kaminarienc() {
 	fi
 }
 
+# Generic handler for unknown ELF binaries that look like shell script wrappers
+decrypt_generic_binary() {
+	if ! hash strace timeout file; then
+		echo "error: environment has missing dependencies (strace, timeout, file)"
+		return 127
+	fi
+	
+	echo "notice: Attempting generic binary deobfuscation (stripped/unknown compiler)..."
+	
+	spath=$(echo $PATH | cut -d: -f1)
+	cp ./$filename.temp1.sh $spath/$filename.temp1.sh
+	chmod +x $spath/$filename.temp1.sh
+
+	# Try multiple methods in order of likelihood
+	
+	# Method 1: Capture write() syscalls (SSC-style)
+	timeout 15s strace -s 999999 -e trace=write -f $filename.temp1.sh 2>&1 | \
+	grep -a 'write([0-9]' | \
+	awk '{
+		match($0, /write\([0-9]+, "(.*)"/, arr)
+		if (arr[1] != "") {
+			printf "%s", arr[1]
+		}
+	}' | \
+	sed 's/\\n/\n/g; s/\\t/\t/g; s/\\"/"/g; s/\\\\/\\/g' > "./$filename.temp2.sh"
+
+	# Check if we got a valid script
+	if [ -s ./$filename.temp2.sh ] && (grep -q '^#!/' "./$filename.temp2.sh" || head -n1 "./$filename.temp2.sh" | grep -qE '^[[:space:]]*(#|[a-zA-Z])'); then
+		echo "success: Captured script via write() syscalls"
+		rm -f $spath/$filename.temp1.sh
+		mv ./$filename.temp2.sh ./$filename.temp1.sh
+		return 0
+	fi
+	
+	# Method 2: Try execve capture (SHC-style)
+	echo "notice: Trying execve() capture method..."
+	rm -f ./$filename.temp2.sh
+	
+	if [ -z $EXECVE_DELAY ]; then
+		for sec in {1..7}; do
+			$filename.temp1.sh &
+			child=$!
+			sleep 0.0"$sec"
+			kill -STOP $child 2>/dev/null
+			cat /proc/$child/cmdline 2>/dev/null | sed 's/.*\(#!\)/\1/' >"./$filename.temp2.sh"
+			kill -TERM $child 2>/dev/null
+
+			if grep -q '#!/' "./$filename.temp2.sh"; then
+				echo "success: Captured script via execve() at delay 0.0${sec}s"
+				rm -f $spath/$filename.temp1.sh
+				mv ./$filename.temp2.sh ./$filename.temp1.sh
+				return 0
+			fi
+		done
+	fi
+
+	# Cleanup if all methods failed
+	rm -f $spath/$filename.temp1.sh ./$filename.temp2.sh ./$filename.temp1.sh
+	echo "error: Failed to deobfuscate binary with generic methods"
+	return 1
+}
+
 init_dec() {
 	[ $VERBOSE -eq 1 ] && set -x
 	while true; do
@@ -363,8 +401,21 @@ init_dec() {
 			echo "Layer $counter: Kaminari-enc"
 			decrypt_kaminarienc
 			PASSED_LOOP=1
+		# Fallback: Check if it's an ELF binary with shell script wrapper characteristics
+		elif [ $PASSED_LOOP -eq 0 ] && file ./$filename.temp1.sh 2>/dev/null | grep -qE 'ELF.*executable'; then
+			# Check if binary has shell script wrapper indicators
+			if strings ./$filename.temp1.sh | grep -qE 'pipe2|fork|execvp|environ'; then
+				counter=$((counter + 1))
+				echo "Layer $counter: Generic binary (stripped/unknown compiler)"
+				decrypt_generic_binary
+				PASSED_LOOP=1
+			else
+				rm ./$filename.temp1.sh
+				echo "error: ELF binary detected but doesn't appear to be a shell script wrapper"
+				break
+			fi
 		else
-			[ $PASSED_LOOP -eq 0 ] && rm ./$filename.temp1.sh && echo "error: uknown patterns, deobfuscation is not supported."
+			[ $PASSED_LOOP -eq 0 ] && rm ./$filename.temp1.sh && echo "error: unknown patterns, deobfuscation is not supported."
 			break
 		fi
 	done
@@ -377,8 +428,9 @@ init_dec() {
 	fi
 
 	[ $VERBOSE -eq 1 ] && set +x
-	mv ./$filename.temp1.sh ./$filename.dec.sh
-	echo "./$filename.dec.sh unshelled"
+	# Move to output directory in the input file's location
+	mv ./$filename.temp1.sh "$output_dir/$filename.dec.sh"
+	echo "$output_dir/$filename.dec.sh unshelled"
 	remove_temp
 }
 
@@ -394,14 +446,27 @@ process_files() {
 		else
 			PASSED_LOOP=0
 			filename=$(basename "$file")
+			
+			# Get the directory of the input file
+			file_dir=$(dirname "$(realpath "$file")")
+			
+			# Create output directory in the input file's location
+			output_dir="$file_dir/output"
+			mkdir -p "$output_dir"
+			
 			cp "$file" "./$filename.temp1.sh"
-			echo "Deobfuscating $file → ./$filename.dec.sh"
+			echo "Deobfuscating $file -> $output_dir/$filename.dec.sh"
 			init_dec "$file"
 		fi
 	done
 }
 
 process_recursive() {
+	# Get the directory path and create output folder
+	dir_path=$(realpath "$1")
+	output_dir="$dir_path/output"
+	mkdir -p "$output_dir"
+	
 	find "$1" -maxdepth 1 -type f | while IFS= read -r file; do
 		process_files "$file"
 	done
@@ -419,7 +484,7 @@ VERBOSE=0
 while [[ $# -gt 0 ]]; do
 	case $1 in
 	-h | --help)
-		show_usage_unshell
+		show_usage
 		exit 0
 		;;
 	-v | --verbose)
