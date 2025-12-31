@@ -1,346 +1,444 @@
 ![unshell_hero](./unshell-banner.png)
-# Unshell / unssc
+# Unshell
 > The Script Kiddies Nightmare
 
-Effortlessly deobfuscate shell scripts back into source code even with heavenly and multi-layered obfuscation. This tool will search for patterns in shell scripts, determine the obfuscation method, and deobfuscate accordingly.
+Effortlessly deobfuscate shell scripts back into source code even with heavenly and multi-layered obfuscation. This tool automatically detects obfuscation methods and applies the appropriate deobfuscation technique.
 
 ## ⚠️ Testing Branch
-This is the **testing branch** with experimental improvements for SSC deobfuscation. For stable version, use the [main branch](https://github.com/Rem01Gaming/unshell).
+This is the **testing branch** with experimental improvements. For the stable version, use the [main branch](https://github.com/Rem01Gaming/unshell).
 
-**🔴 Important:** The binary is now named **`unssc`** (instead of `unshell`) to avoid conflicts with existing Termux packages.
-
-## What's New in Testing
+## What's New in This Fork
 - **🔧 Improved SSC Deobfuscation**: Replaced unreliable fd/3 reading with robust strace-based syscall interception
 - **⚡ Better Reliability**: Works with SSC binaries compiled with recent versions (Dec 2024 - Jan 2025)
-- **🛡️ Enhanced Protection Bypass**: Handles segmented decryption (-S flag) and random keys (-r flag)
-- **📊 Smarter Detection**: Validates captured scripts and provides better error messages
-- **🔄 Renamed Binary**: Now called `unssc` to prevent Termux package conflicts
-- **🆕 Generic Binary Handler**: NEW! Automatically handles stripped ELF binaries and unknown compilers
+- **🛡️ Enhanced Protection Bypass**: Handles segmented decryption (`-S` flag) and random keys (`-r` flag)
+- **📊 Smarter Detection**: Validates captured scripts with better error messages
+- **🆕 Generic Binary Handler**: Automatically handles stripped ELF binaries and unknown compilers
+- **🎯 Multi-Method Fallback**: If one deobfuscation method fails, automatically tries alternatives
 
 ## Features
-- Zero configuration: There's no need for any configuration
-- Penetrate: Multi-layered obfuscation is not a problem
-- Easy to use: just `unssc -f encrypted1 encrypted2` in cmd
-- Fast detection: Pattern-based obfuscation identification
-- Smart fallback: Handles unknown compilers and stripped binaries automatically
+- **Zero configuration**: No setup required, works out of the box
+- **Multi-layered penetration**: Handles scripts obfuscated multiple times
+- **Easy to use**: Simple command-line interface: `unshell -f script1 script2`
+- **Pattern-based detection**: Automatically identifies obfuscation methods
+- **Smart fallback**: Handles unknown compilers and stripped binaries automatically
+- **Batch processing**: Process multiple files or entire directories recursively
 
-## Supported obfuscation method
+## Supported Obfuscation Methods
+
 <details>
-<summary>Shell Script Compiler (SHC)</summary>
-SHC works internally called execve to shell, it decrypted at runtimes and visible via command line args process
+<summary><b>Shell Script Compiler (SHC)</b></summary>
 
-eg: <code>/bin/sh -c "decrypted shell"</code>
+SHC encrypts scripts and decrypts them at runtime via execve() syscalls. The decrypted script is visible in the process command line.
+
+**Detection method**: String pattern `neither argv[0] nor $_ works`  
+**Deobfuscation**: Process memory capture via `/proc/{pid}/cmdline`  
+**Requirements**: Standard Linux tools
 </details>
 
 <details>
-<summary>Simple Script Compiler (SSC) - IMPROVED ✨</summary>
+<summary><b>Simple Script Compiler (SSC)</b> - IMPROVED ✨</summary>
 
-SSC uses C++ to encrypt scripts with RC4 cipher and pipes the decrypted content to the interpreter at runtime. 
+SSC uses C++ and RC4 cipher to encrypt scripts, piping decrypted content to the interpreter at runtime.
 
-**New in Testing Branch:**
-- Uses `strace` to intercept write() syscalls instead of reading from hardcoded file descriptors
-- Handles dynamic pipe allocation properly
-- Works with SSC's latest features:
+**What's improved:**
+- Strace-based syscall interception (replaces unreliable fd reading)
+- Dynamic pipe allocation handling
+- Support for SSC's latest features:
   - Segmented decryption (`-S` flag)
   - Random RC4 keys (`-r` flag)
-  - Anti-debugging bypassed via syscall interception
+  - Anti-debugging bypass via kernel-level interception
   - CRC32 checksum verification
 
-**Requirements:** `strace`, `timeout`, `awk`, `grep`
+**Requirements**: `strace`, `timeout`, `awk`, `grep`
 </details>
 
 <details>
-<summary>Generic Binary (Stripped/Unknown Compilers) - NEW 🆕</summary>
+<summary><b>Generic Binary (Stripped/Unknown Compilers)</b> - NEW 🆕</summary>
 
-Fallback handler for ELF binaries without recognizable signatures. Works with:
+Intelligent fallback handler for ELF binaries without recognizable signatures.
+
+**Supports:**
 - Stripped SSC/SHC binaries (no debug symbols)
 - Custom shell script compilers
 - Binaries compiled with Android NDK r29+
-- Unknown obfuscation tools with shell execution patterns
+- Unknown proprietary obfuscation tools
 
 **How it works:**
-1. Detects ELF executables with shell wrapper characteristics (`pipe2`, `fork`, `execvp`, `environ`)
-2. Tries multiple capture methods:
+1. Detects ELF executables with shell wrapper characteristics
+2. Searches for syscall patterns: `pipe2`, `fork`, `execvp`, `environ`
+3. Tries multiple capture methods:
    - Write() syscall interception (SSC-style)
    - Execve() cmdline capture (SHC-style)
-3. Validates and extracts decrypted scripts
+4. Validates and extracts decrypted scripts
 
-**Example binaries it handles:**
-- Android NDK compiled wrappers
-- Custom encryption tools
-- Proprietary script obfuscators
-
-**Requirements:** `strace`, `timeout`, `file`
+**Requirements**: `strace`, `timeout`, `file`
 </details>
 
 <details>
-<summary>Ri-crypt</summary>
-Ri-crypt works internally called execve to shell, it decrypted at runtimes and visible via command line args process. we can retrieve the shell script using `strace`.
+<summary><b>Ri-crypt</b></summary>
+
+Ri-crypt works similarly to SHC, using execve() to shell with runtime decryption.
+
+**Deobfuscation**: Strace-based execve monitoring with eval extraction
 </details>
 
 <details>
-<summary>bash-obfuscate (Node.js CLI)</summary>
-bash-obfuscate works by randomizing the script with random variables then execute it in `eval` command.
+<summary><b>bash-obfuscate</b> (Node.js CLI)</summary>
+
+Randomizes scripts with random variable names and executes via `eval` command.
+
+**Detection**: Pattern matching for randomized variable structures
 </details>
 
 <details>
-<summary>Bashrock</summary>
-Bashrock works almost the same way as bash-obfuscate.
+<summary><b>Bashrock</b></summary>
+
+Similar to bash-obfuscate with variable randomization and eval execution.
+
+**Detection**: `$RzE` pattern signature
 </details>
 
 <details>
-<summary>TPP Tool</summary>
-The creator of this obfuscation said "it has anti-decode feature" despite multilayered base64 encoding that can be easily decoded.
-As of this writing, unssc supports up to version 12 of this "tool".
+<summary><b>TPP Tool</b></summary>
+
+Claims "anti-decode" protection despite using simple multilayered base64 encoding.
+
+**Support**: Up to version 12  
+**Method**: Pattern extraction and base64 decoding
 </details>
 
 <details>
-<summary>BashProtector</summary>
-BashProtector randomizes the script with random variables layered by single `base64` encryption, then executes it in single `eval` command.
+<summary><b>BashProtector</b></summary>
+
+Randomizes scripts with base64 encryption layer and single eval execution.
+
+**Detection**: `Tx=Eds` signature pattern
 </details>
 
 <details>
-<summary>Extreme comment/editor EOF trick</summary>
-Some people obfuscate their scripts by adding generous amounts of comments until it becomes a really big file, tricking average text editors into struggling while opening the script.
+<summary><b>Extreme comment/EOF trick</b></summary>
+
+Obfuscates by adding massive amounts of comments to create large files that overwhelm text editors.
+
+**Detection**: Comment count threshold (>180 lines)  
+**Method**: Comment removal via shfmt
 </details>
 
 <details>
-<summary>bzip2</summary>
-Usually used for obfuscating tunneling/VPN scripts. The actual script is compressed with bzip2 and embedded inside the decompression script itself.
+<summary><b>bzip2</b></summary>
+
+Commonly used for tunneling/VPN scripts. Compresses actual script with bzip2 and embeds it in a decompression wrapper.
+
+**Method**: Skip header extraction and bzip2 decompression
 </details>
 
 <details>
-<summary>Axeron online module</summary>
-The script is actually stored somewhere online (usually public GitHub pages) and the module only executes the actual script after downloading from cloud. The file link itself is obfuscated with base64 and rot17.
+<summary><b>Axeron Online Module</b></summary>
+
+Stores scripts remotely (usually GitHub pages) with obfuscated download links using base64 and rot17.
+
+**Method**: Link deobfuscation and remote script retrieval
 </details>
 
 <details>
-<summary>base64</summary>
-Not too crazy, just classic <code>echo "ZWNobyBzb21lIGJhc2U2NCBlbmNyeXB0ZWQgc2hpdAo=" | base64 -d | sh</code>.
+<summary><b>base64</b></summary>
+
+Classic base64 encoding with pipe-to-shell execution.
+
+**Example**: `echo "base64data" | base64 -d | sh`
 </details>
 
 <details>
-<summary>Kaminari-enc</summary>
-Kaminari-enc creates a temporary cache script and executes it at runtime.
+<summary><b>Kaminari-enc</b></summary>
+
+Creates temporary cache scripts and executes them at runtime.
+
+**Detection**: `/data/local/tmp/.cache_script.sh` pattern
 </details>
 
 <details>
-<summary>putraxitersz</summary>
-Putraxitersz uses gzip compression and pipes to shell execution.
+<summary><b>putraxitersz</b></summary>
+
+Uses gzip compression with pipe-to-shell execution.
+
+**Detection**: Modul signature pattern
 </details>
 
 ## Installation
 
-### Testing Branch (Improved SSC Support) - New Binary Name
-```bash
-spath=$(echo $PATH | cut -d: -f1)
-curl -sLo $spath/unssc https://github.com/hoshiyomiX/unshell/raw/testing/unssc
-chmod +x $spath/unssc
-```
-
-### Legacy Installation (Old Name - May Conflict in Termux)
+### Quick Install (Recommended)
 ```bash
 spath=$(echo $PATH | cut -d: -f1)
 curl -sLo $spath/unshell https://github.com/hoshiyomiX/unshell/raw/testing/unshell
 chmod +x $spath/unshell
 ```
 
-### Stable Release (Original - from Rem01Gaming)
+### Termux
+```bash
+curl -sLo $PREFIX/bin/unshell https://github.com/hoshiyomiX/unshell/raw/testing/unshell
+chmod +x $PREFIX/bin/unshell
+```
+
+### Original Stable Version
+For the original stable release by Rem01Gaming:
 ```bash
 spath=$(echo $PATH | cut -d: -f1)
 curl -sLo $spath/unshell https://github.com/Rem01Gaming/unshell/raw/main/unshell
 chmod +x $spath/unshell
 ```
 
-### Dependencies
+## Dependencies
 
-**Required:**
-- `bash` (obviously)
-- `strings` - for binary pattern detection
-- `curl` - for downloads
-- `grep`, `sed`, `awk` - for text processing
-- `file` - for binary type detection
+### Required
+- `bash` - Shell interpreter
+- `strings` - Binary pattern detection
+- `curl` - Downloads and updates
+- `grep`, `sed`, `awk` - Text processing
+- `file` - Binary type detection
 
-**Optional (for specific obfuscation types):**
-- `strace` - for SSC, SHC, Ri-crypt, and generic binary deobfuscation
-- `timeout` - for SSC timeout handling (part of `coreutils`)
-- `shfmt` - for TPP Tool and comment removal
-- `bzip2` - for bzip2-obfuscated scripts
+### Optional (for specific obfuscation types)
+- `strace` - SSC, SHC, Ri-crypt, and generic binary deobfuscation
+- `timeout` - SSC timeout handling (part of `coreutils`)
+- `shfmt` - TPP Tool and comment removal
+- `bzip2` - bzip2-obfuscated scripts
 
-Install on Debian/Ubuntu:
+### Install Dependencies
+
+**Debian/Ubuntu:**
 ```bash
 sudo apt install strace coreutils gawk grep sed curl binutils file shfmt bzip2
 ```
 
-Install on Termux:
+**Termux:**
 ```bash
 pkg install strace coreutils gawk grep sed curl binutils file shfmt bzip2
 ```
 
 ## Usage
 
-**Note:** Replace `unssc` with `unshell` if you installed the legacy version.
-
-```yaml
-unssc - Deobfuscate any shell scripts with multiple methods
-  Usage: unssc [OPTIONS] [FILE]
-  Usage: unssc [OPTIONS] [DIR]
+```
+unshell - Deobfuscate any shell scripts with multiple methods
+  Usage: unshell [OPTIONS] [FILE]
+  Usage: unshell [OPTIONS] [DIR]
 
   Options:
     -h, --help
       print this message
     -f, --file [FILE]
-      Scripts you wanted to deobfuscate, multi input is supported
+      Scripts you want to deobfuscate, multiple files supported
     -r, --recursive [DIR]
-      Recursively find and deobfuscate all files in the specified directory
+      Recursively find and deobfuscate all files in directory
     -v, --verbose
-      Be verbose
+      Enable verbose output for debugging
     -d, --execve-delay [SECOND]
-      Set custom execve delay time in seconds for SHC encryption (not used for SSC)
+      Custom execve delay for SHC encryption (decimal values supported)
     -U, --update
-      Update the script
-
-  Example usages:
-    unssc -f install.sh menu.sh
-    unssc -v -f /system/bin/gaming_script
-    unssc -d 6.018 -f ./VTK
-    unssc -r .
+      Update to the latest version
 ```
 
-### Examples
+## Examples
 
-**Deobfuscate a single file:**
+**Single file:**
 ```bash
-unssc -f encrypted_script.sh
+unshell -f encrypted_script.sh
 ```
 
-**Deobfuscate multiple files:**
+**Multiple files:**
 ```bash
-unssc -f script1.sh script2.sh script3.sh
+unshell -f script1.sh script2.sh script3.sh
 ```
 
-**Deobfuscate all files in current directory:**
+**Recursive directory processing:**
 ```bash
-unssc -r .
+unshell -r /path/to/scripts/
 ```
 
-**Verbose mode for debugging:**
+**Current directory:**
 ```bash
-unssc -v -f obfuscated.sh
+unshell -r .
 ```
 
-**Deobfuscate stripped Android binary:**
+**Verbose mode (debugging):**
 ```bash
-unssc -f /system/bin/custom_script
+unshell -v -f obfuscated.sh
 ```
 
-**Update to latest version:**
+**Stripped Android binary:**
 ```bash
-unssc -U
+unshell -f /system/bin/custom_script
 ```
 
-## WARNING
-⚠️ Using unssc to retrieve the original shell script from SHC, SSC, or Ri-crypt obfuscation **could potentially harm your machine**. These obfuscation types require executing the script to deobfuscate, which leaves your machine vulnerable if the script does something malicious. 
+**Custom SHC delay:**
+```bash
+unshell -d 0.5 -f shc_encrypted.sh
+```
 
-**Security Recommendations:**
-- Avoid running unssc with root/sudo permissions unless you fully trust the script
-- Test in isolated environments (containers, VMs) when dealing with unknown scripts
-- Review the output before executing deobfuscated scripts
-- Be aware that malicious scripts can detect analysis environments
-- The generic binary handler also executes binaries - use with caution!
+**Update:**
+```bash
+unshell -U
+```
+
+## ⚠️ Security Warning
+
+Using unshell to deobfuscate scripts from SHC, SSC, Ri-crypt, or unknown binaries **requires executing the obfuscated code**. This poses security risks if the script is malicious.
+
+### Security Best Practices
+
+✅ **DO:**
+- Use isolated environments (containers, VMs) for unknown scripts
+- Review deobfuscated output before execution
+- Avoid root/sudo unless you fully trust the script
+- Test in sandboxed environments first
+
+❌ **DON'T:**
+- Run unshell as root on untrusted scripts
+- Execute deobfuscated scripts without review
+- Process scripts from untrusted sources on production systems
+- Ignore warnings about potentially malicious code
 
 ## Technical Details
 
 ### SSC Deobfuscation Method
-The testing branch uses an improved approach for SSC:
 
-1. **Syscall Interception**: Uses `strace` to capture write() syscalls
-2. **Dynamic FD Handling**: No hardcoded file descriptor assumptions
-3. **Timeout Protection**: 15-second timeout prevents hanging
+**Traditional approach (unreliable):**
+- Hardcoded file descriptor reading (fd/3)
+- Fails with dynamic allocation
+- Broken by recent SSC updates
+
+**Our improved approach:**
+1. **Syscall Interception**: Strace captures write() syscalls at kernel level
+2. **Dynamic FD Handling**: No hardcoded assumptions about file descriptors
+3. **Timeout Protection**: 15-second timeout prevents infinite hangs
 4. **Data Extraction**: AWK-based parsing of strace output
 5. **Validation**: Checks for valid shell script structure (shebang, syntax)
-6. **Cleanup**: Fallback logic to extract scripts from noisy captures
+6. **Cleanup**: Fallback logic extracts scripts from noisy captures
 
-This method works because SSC must write the decrypted script to a pipe before the interpreter can execute it, and strace intercepts this at the kernel level before anti-debugging checks complete.
+**Why it works:**  
+SSC must write decrypted scripts to pipes before execution. Strace intercepts at kernel level before anti-debugging checks complete.
 
 ### Generic Binary Handler
-New fallback system for unknown/stripped binaries:
 
-**Detection Criteria:**
-- Must be an ELF executable
-- Contains shell wrapper indicators: `pipe2`, `fork`, `execvp`, `environ`
+**Detection criteria:**
+- ELF executable format
+- Shell wrapper indicators: `pipe2`, `fork`, `execvp`, `environ`
 
-**Deobfuscation Process:**
-1. **Primary Method**: Capture write() syscalls (works for SSC-style binaries)
-2. **Fallback Method**: Capture execve() cmdline (works for SHC-style binaries)
-3. **Validation**: Ensures captured data is a valid shell script
+**Deobfuscation workflow:**
+1. **Primary**: Write() syscall capture (SSC-style)
+2. **Fallback**: Execve() cmdline capture (SHC-style)
+3. **Validation**: Ensures valid shell script output
 
-**Use Cases:**
-- Stripped binaries compiled with Android NDK
-- Custom shell script compilers without signatures
+**Supported binaries:**
+- Android NDK compiled wrappers
+- Stripped binaries (no symbols)
+- Custom script compilers
 - Proprietary obfuscation tools
 - Modified SSC/SHC variants
 
 ## Troubleshooting
 
-**SSC deobfuscation fails:**
-- Ensure `strace` and `timeout` are installed
-- Try verbose mode: `unssc -v -f script.sh`
-- Check if binary is heavily protected with `-u` flag (anti-debugging)
-- Some SSC binaries with extreme protection may still be difficult to deobfuscate
+### SSC deobfuscation fails
 
-**Generic binary handler activated but fails:**
-- Binary might have advanced anti-debugging protections
-- Try different delay values with `-d` flag for execve method
-- Check if `file` command properly detects the binary
-- Some proprietary tools might use custom IPC methods not based on pipes
+**Symptoms:**
+- "Failed to capture script" error
+- Empty output file
+- Timeout after 15 seconds
 
-**"ELF binary detected but doesn't appear to be a shell script wrapper":**
-- The binary doesn't have typical shell execution patterns
-- It might be a regular executable, not a script wrapper
-- Check with: `strings binary | grep -E 'pipe|fork|exec'`
+**Solutions:**
+1. Install `strace` and `timeout`:
+   ```bash
+   pkg install strace coreutils  # Termux
+   sudo apt install strace coreutils  # Debian/Ubuntu
+   ```
+2. Enable verbose mode: `unshell -v -f script.sh`
+3. Check for advanced anti-debugging (`-u` flag)
+4. Some heavily protected binaries may be uncrackable
 
-**Command not found:**
+### Generic binary handler fails
+
+**Symptoms:**
+- "ELF binary detected but doesn't appear to be a shell script wrapper"
+- Handler activates but produces no output
+
+**Solutions:**
+1. Verify binary has shell patterns:
+   ```bash
+   strings binary | grep -E 'pipe|fork|exec'
+   ```
+2. Try custom delay: `unshell -d 0.8 -f binary`
+3. Check if `file` command detects ELF properly
+4. Binary might use custom IPC (not standard pipes)
+
+### Command not found
+
 ```bash
-# Make sure installation path is in $PATH
+# Check installation
+which unshell
+
+# Verify $PATH
 echo $PATH
-# Or use absolute path
-/usr/local/bin/unssc -f script.sh
-# Or if using legacy name
+
+# Use absolute path
 /usr/local/bin/unshell -f script.sh
 ```
 
-**Permission denied:**
+### Permission denied
+
 ```bash
-chmod +x $(which unssc)
-# Or for legacy installation
+# Fix permissions
 chmod +x $(which unshell)
+
+# Or
+sudo chmod +x /usr/local/bin/unshell
 ```
 
-**Conflict in Termux:**
-If you experience conflicts with other packages in Termux, use the new `unssc` binary name:
-```bash
-pkg remove unshell  # if conflicting package exists
-curl -sLo $PREFIX/bin/unssc https://github.com/hoshiyomiX/unshell/raw/testing/unssc
-chmod +x $PREFIX/bin/unssc
-```
+### Strace permission denied (Android/Termux)
+
+Android 10+ restricts ptrace. Solutions:
+- Root device and run as root
+- Use older Android version
+- Some methods work without root (depends on binary)
+
+## Performance
+
+- **Text-based obfuscation**: Instant (< 1 second)
+- **SSC/SHC binaries**: 1-15 seconds (timeout protection)
+- **Generic binaries**: 1-15 seconds (tries multiple methods)
+- **Multi-layered**: Depends on layer count (automatic)
 
 ## Contributing
-Contributions are welcome! If you find a new obfuscation method or have improvements:
 
-1. Fork the repository
-2. Create a feature branch
-3. Add your changes
-4. Submit a pull request
+Contributions welcome! To add new obfuscation methods:
 
-## Special Credits
-- [kawaii-ghost](https://github.com/kawaii-ghost/deshc) for decsh (shc and ssc deobfuscator)
-- [RiProG-id](https://github.com/RiProG-id/Universal-Shell-Dec.git) for universal-shell-dec, the inspiration and foundation of this project
-- [Rem01Gaming](https://github.com/Rem01Gaming) for the original unshell project
+1. Fork this repository
+2. Create feature branch: `git checkout -b feature/new-obfuscation`
+3. Add detection pattern in `init_dec()` function
+4. Implement `decrypt_yourmethod()` function
+5. Test thoroughly
+6. Submit pull request
 
-## Support the Original Author
+**What to include:**
+- Pattern detection logic
+- Deobfuscation function
+- README documentation
+- Test samples (if possible)
+
+## Credits
+
+- **[kawaii-ghost](https://github.com/kawaii-ghost/deshc)** - decsh (shc and ssc deobfuscator)
+- **[RiProG-id](https://github.com/RiProG-id/Universal-Shell-Dec.git)** - universal-shell-dec (inspiration and foundation)
+- **[Rem01Gaming](https://github.com/Rem01Gaming)** - Original unshell project
+
+## Support
+
+Support the original author:
 - [Buy Me a Coffee](https://buymeacoffee.com/rem01gaming)
 - [Saweria](https://saweria.co/Rem01Gaming)
 
 ## License
-GPL-3.0 License - See LICENSE file for details
+
+GPL-3.0 License - See [LICENSE](LICENSE) file for details
+
+---
+
+**⚡ Maintained by [hoshiyomiX](https://github.com/hoshiyomiX)**  
+**⭐ Original by [Rem01Gaming](https://github.com/Rem01Gaming)**
