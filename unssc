@@ -288,6 +288,68 @@ decrypt_kaminarienc() {
 	fi
 }
 
+# Generic handler for unknown ELF binaries that look like shell script wrappers
+decrypt_generic_binary() {
+	if ! hash strace timeout file; then
+		echo "error: environment has missing dependencies (strace, timeout, file)"
+		return 127
+	fi
+	
+	echo "notice: Attempting generic binary deobfuscation (stripped/unknown compiler)..."
+	
+	spath=$(echo $PATH | cut -d: -f1)
+	cp ./$filename.temp1.sh $spath/$filename.temp1.sh
+	chmod +x $spath/$filename.temp1.sh
+
+	# Try multiple methods in order of likelihood
+	
+	# Method 1: Capture write() syscalls (SSC-style)
+	timeout 15s strace -s 999999 -e trace=write -f $filename.temp1.sh 2>&1 | \
+	grep -a 'write([0-9]' | \
+	awk '{
+		match($0, /write\([0-9]+, "(.*)"/, arr)
+		if (arr[1] != "") {
+			printf "%s", arr[1]
+		}
+	}' | \
+	sed 's/\\n/\n/g; s/\\t/\t/g; s/\\"/"/g; s/\\\\/\\/g' > "./$filename.temp2.sh"
+
+	# Check if we got a valid script
+	if [ -s ./$filename.temp2.sh ] && (grep -q '^#!/' "./$filename.temp2.sh" || head -n1 "./$filename.temp2.sh" | grep -qE '^[[:space:]]*(#|[a-zA-Z])'); then
+		echo "success: Captured script via write() syscalls"
+		rm -f $spath/$filename.temp1.sh
+		mv ./$filename.temp2.sh ./$filename.temp1.sh
+		return 0
+	fi
+	
+	# Method 2: Try execve capture (SHC-style)
+	echo "notice: Trying execve() capture method..."
+	rm -f ./$filename.temp2.sh
+	
+	if [ -z $EXECVE_DELAY ]; then
+		for sec in {1..7}; do
+			$filename.temp1.sh &
+			child=$!
+			sleep 0.0"$sec"
+			kill -STOP $child 2>/dev/null
+			cat /proc/$child/cmdline 2>/dev/null | sed 's/.*\(#!\)/\1/' >"./$filename.temp2.sh"
+			kill -TERM $child 2>/dev/null
+
+			if grep -q '#!/' "./$filename.temp2.sh"; then
+				echo "success: Captured script via execve() at delay 0.0${sec}s"
+				rm -f $spath/$filename.temp1.sh
+				mv ./$filename.temp2.sh ./$filename.temp1.sh
+				return 0
+			fi
+		done
+	fi
+
+	# Cleanup if all methods failed
+	rm -f $spath/$filename.temp1.sh ./$filename.temp2.sh ./$filename.temp1.sh
+	echo "error: Failed to deobfuscate binary with generic methods"
+	return 1
+}
+
 init_dec() {
 	[ $VERBOSE -eq 1 ] && set -x
 	while true; do
@@ -363,8 +425,21 @@ init_dec() {
 			echo "Layer $counter: Kaminari-enc"
 			decrypt_kaminarienc
 			PASSED_LOOP=1
+		# Fallback: Check if it's an ELF binary with shell script wrapper characteristics
+		elif [ $PASSED_LOOP -eq 0 ] && file ./$filename.temp1.sh 2>/dev/null | grep -qE 'ELF.*executable'; then
+			# Check if binary has shell script wrapper indicators
+			if strings ./$filename.temp1.sh | grep -qE 'pipe2|fork|execvp|environ'; then
+				counter=$((counter + 1))
+				echo "Layer $counter: Generic binary (stripped/unknown compiler)"
+				decrypt_generic_binary
+				PASSED_LOOP=1
+			else
+				rm ./$filename.temp1.sh
+				echo "error: ELF binary detected but doesn't appear to be a shell script wrapper"
+				break
+			fi
 		else
-			[ $PASSED_LOOP -eq 0 ] && rm ./$filename.temp1.sh && echo "error: uknown patterns, deobfuscation is not supported."
+			[ $PASSED_LOOP -eq 0 ] && rm ./$filename.temp1.sh && echo "error: unknown patterns, deobfuscation is not supported."
 			break
 		fi
 	done
