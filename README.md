@@ -1,22 +1,25 @@
 ![unshell_hero](./unshell-banner.png)
-# Unshell
+# Unshell / unssc
 > The Script Kiddies Nightmare
 
-Effortlessly deobfuscate shell scripts back into source code even with heavenly and multi-layered obfuscation. unshell will search for patterns on shell script, determine and deobfuscate accordingly.
+Effortlessly deobfuscate shell scripts back into source code even with heavenly and multi-layered obfuscation. This tool will search for patterns in shell scripts, determine the obfuscation method, and deobfuscate accordingly.
 
 ## ⚠️ Testing Branch
 This is the **testing branch** with experimental improvements for SSC deobfuscation. For stable version, use the [main branch](https://github.com/Rem01Gaming/unshell).
+
+**🔴 Important:** The binary is now named **`unssc`** (instead of `unshell`) to avoid conflicts with existing Termux packages.
 
 ## What's New in Testing
 - **🔧 Improved SSC Deobfuscation**: Replaced unreliable fd/3 reading with robust strace-based syscall interception
 - **⚡ Better Reliability**: Works with SSC binaries compiled with recent versions (Dec 2024 - Jan 2025)
 - **🛡️ Enhanced Protection Bypass**: Handles segmented decryption (-S flag) and random keys (-r flag)
 - **📊 Smarter Detection**: Validates captured scripts and provides better error messages
+- **🔄 Renamed Binary**: Now called `unssc` to prevent Termux package conflicts
 
 ## Features
 - Zero configuration: There's no need for any configuration
 - Penetrate: Multi-layered obfuscation is not a problem
-- Easy to use: just `unshell -f encrypted1 encrypted2` in cmd
+- Easy to use: just `unssc -f encrypted1 encrypted2` in cmd
 - Fast detection: Pattern-based obfuscation identification
 
 ## Supported obfuscation method
@@ -62,7 +65,7 @@ Bashrock works almost the same way as bash-obfuscate.
 <details>
 <summary>TPP Tool</summary>
 The creator of this obfuscation said "it has anti-decode feature" despite multilayered base64 encoding that can be easily decoded.
-As of this writing, unshell supports up to version 12 of this "tool".
+As of this writing, unssc supports up to version 12 of this "tool".
 </details>
 
 <details>
@@ -102,14 +105,21 @@ Putraxitersz uses gzip compression and pipes to shell execution.
 
 ## Installation
 
-### Testing Branch (Improved SSC Support)
+### Testing Branch (Improved SSC Support) - New Binary Name
+```bash
+spath=$(echo $PATH | cut -d: -f1)
+curl -sLo $spath/unssc https://github.com/hoshiyomiX/unshell/raw/testing/unssc
+chmod +x $spath/unssc
+```
+
+### Legacy Installation (Old Name - May Conflict in Termux)
 ```bash
 spath=$(echo $PATH | cut -d: -f1)
 curl -sLo $spath/unshell https://github.com/hoshiyomiX/unshell/raw/testing/unshell
 chmod +x $spath/unshell
 ```
 
-### Stable Release (Original)
+### Stable Release (Original - from Rem01Gaming)
 ```bash
 spath=$(echo $PATH | cut -d: -f1)
 curl -sLo $spath/unshell https://github.com/Rem01Gaming/unshell/raw/main/unshell
@@ -126,7 +136,7 @@ chmod +x $spath/unshell
 
 **Optional (for specific obfuscation types):**
 - `strace` - for SSC, SHC, Ri-crypt deobfuscation
-- `timeout` - for SSC timeout handling
+- `timeout` - for SSC timeout handling (part of `coreutils`)
 - `shfmt` - for TPP Tool and comment removal
 - `bzip2` - for bzip2-obfuscated scripts
 
@@ -141,10 +151,13 @@ pkg install strace coreutils gawk grep sed curl binutils shfmt bzip2
 ```
 
 ## Usage
+
+**Note:** Replace `unssc` with `unshell` if you installed the legacy version.
+
 ```yaml
-unshell - Deobfuscate any shell scripts with multiple methods
-  Usage: unshell [OPTIONS] [FILE]
-  Usage: unshell [OPTIONS] [DIR]
+unssc - Deobfuscate any shell scripts with multiple methods
+  Usage: unssc [OPTIONS] [FILE]
+  Usage: unssc [OPTIONS] [DIR]
 
   Options:
     -h, --help
@@ -156,44 +169,49 @@ unshell - Deobfuscate any shell scripts with multiple methods
     -v, --verbose
       Be verbose
     -d, --execve-delay [SECOND]
-      Set custom execve delay time in seconds for SHC encryption (SSC no longer uses this)
+      Set custom execve delay time in seconds for SHC encryption (not used for SSC)
     -U, --update
       Update the script
 
   Example usages:
-    unshell -f install.sh menu.sh
-    unshell -v -f /system/bin/gaming_script
-    unshell -d 6.018 -f ./VTK
-    unshell -r .
+    unssc -f install.sh menu.sh
+    unssc -v -f /system/bin/gaming_script
+    unssc -d 6.018 -f ./VTK
+    unssc -r .
 ```
 
 ### Examples
 
 **Deobfuscate a single file:**
 ```bash
-unshell -f encrypted_script.sh
+unssc -f encrypted_script.sh
 ```
 
 **Deobfuscate multiple files:**
 ```bash
-unshell -f script1.sh script2.sh script3.sh
+unssc -f script1.sh script2.sh script3.sh
 ```
 
 **Deobfuscate all files in current directory:**
 ```bash
-unshell -r .
+unssc -r .
 ```
 
 **Verbose mode for debugging:**
 ```bash
-unshell -v -f obfuscated.sh
+unssc -v -f obfuscated.sh
+```
+
+**Update to latest version:**
+```bash
+unssc -U
 ```
 
 ## WARNING
-⚠️ Using unshell to retrieve the original shell script from SHC, SSC, or Ri-crypt obfuscation **could potentially harm your machine**. These obfuscation types require executing the script to deobfuscate, which leaves your machine vulnerable if the script does something malicious. 
+⚠️ Using unssc to retrieve the original shell script from SHC, SSC, or Ri-crypt obfuscation **could potentially harm your machine**. These obfuscation types require executing the script to deobfuscate, which leaves your machine vulnerable if the script does something malicious. 
 
 **Security Recommendations:**
-- Avoid running unshell with root/sudo permissions unless you fully trust the script
+- Avoid running unssc with root/sudo permissions unless you fully trust the script
 - Test in isolated environments (containers, VMs) when dealing with unknown scripts
 - Review the output before executing deobfuscated scripts
 - Be aware that malicious scripts can detect analysis environments
@@ -216,21 +234,33 @@ This method works because SSC must write the decrypted script to a pipe before t
 
 **SSC deobfuscation fails:**
 - Ensure `strace` and `timeout` are installed
-- Try verbose mode: `unshell -v -f script.sh`
+- Try verbose mode: `unssc -v -f script.sh`
 - Check if binary is heavily protected with `-u` flag (anti-debugging)
 - Some SSC binaries with extreme protection may still be difficult to deobfuscate
-
-**Permission denied:**
-```bash
-chmod +x /path/to/unshell
-```
 
 **Command not found:**
 ```bash
 # Make sure installation path is in $PATH
 echo $PATH
 # Or use absolute path
+/usr/local/bin/unssc -f script.sh
+# Or if using legacy name
 /usr/local/bin/unshell -f script.sh
+```
+
+**Permission denied:**
+```bash
+chmod +x $(which unssc)
+# Or for legacy installation
+chmod +x $(which unshell)
+```
+
+**Conflict in Termux:**
+If you experience conflicts with other packages in Termux, use the new `unssc` binary name:
+```bash
+pkg remove unshell  # if conflicting package exists
+curl -sLo $PREFIX/bin/unssc https://github.com/hoshiyomiX/unshell/raw/testing/unssc
+chmod +x $PREFIX/bin/unssc
 ```
 
 ## Contributing
