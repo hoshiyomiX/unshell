@@ -93,41 +93,57 @@ decrypt_ricrypt() {
 }
 
 decrypt_ssc() {
+	if ! hash strace timeout; then
+		echo "error: environment has missing dependencies (strace, timeout)"
+		return 127
+	fi
+	
 	spath=$(echo $PATH | cut -d: -f1)
 	cp ./$filename.temp1.sh $spath/$filename.temp1.sh
 	chmod +x $spath/$filename.temp1.sh
 
-	if [ -z $EXECVE_DELAY ]; then
-		for sec in {10..28}; do
-			$filename.temp1.sh &
-			child=$!
-			sleep 0.0"$sec"
-			kill -STOP $child
-			cat /proc/$child/fd/3 >"./$filename.temp2.sh"
-			kill -TERM $child
-
-			if [ -s ./$filename.temp2.sh ]; then
-				break
-			fi
-		done
-	else
-		$filename.temp1.sh &
-		child=$!
-		sleep $EXECVE_DELAY
-		kill -STOP $child
-		cat /proc/$child/fd/3 >"./$filename.temp2.sh"
-		kill -TERM $child
-	fi
+	# Use strace to capture write syscalls with full data
+	# SSC writes decrypted script to pipe, which we intercept
+	timeout 15s strace -s 999999 -e trace=write -f $filename.temp1.sh 2>&1 | \
+	grep -a 'write([0-9]' | \
+	awk '{
+		# Extract content between quotes after write(fd, 
+		match($0, /write\([0-9]+, "(.*)"/, arr)
+		if (arr[1] != "") {
+			printf "%s", arr[1]
+		}
+	}' | \
+	sed 's/\\n/\n/g; s/\\t/\t/g; s/\\"/"/g; s/\\\\/\\/g' > "./$filename.temp2.sh"
 
 	rm -f $spath/$filename.temp1.sh
+	
 	if [ -s ./$filename.temp2.sh ]; then
-		if ! grep -q '#!/' "./$filename.temp2.sh"; then
-			echo "notice: Output script maybe truncated"
+		# Verify we captured a valid shell script
+		if grep -q '^#!/' "./$filename.temp2.sh" || head -n1 "./$filename.temp2.sh" | grep -qE '^[[:space:]]*(#|[a-zA-Z])'; then
+			mv ./$filename.temp2.sh ./$filename.temp1.sh
+		else
+			echo "notice: Captured data doesn't look like a shell script, attempting cleanup..."
+			# Try to extract script starting from shebang
+			if grep -q '#!' "./$filename.temp2.sh"; then
+				sed -n '/#!/,$p' "./$filename.temp2.sh" > "./$filename.temp3.sh"
+				if [ -s ./$filename.temp3.sh ]; then
+					mv ./$filename.temp3.sh ./$filename.temp1.sh
+					rm -f ./$filename.temp2.sh
+				else
+					rm -f ./$filename.temp2.sh ./$filename.temp3.sh ./$filename.temp1.sh
+					echo "error: Failed to extract valid script from SSC binary"
+					return 1
+				fi
+			else
+				rm -f ./$filename.temp2.sh ./$filename.temp1.sh
+				echo "error: No shebang found in captured data"
+				return 1
+			fi
 		fi
-
-		mv ./$filename.temp2.sh ./$filename.temp1.sh
 	else
-		rm ./$filename.temp2.sh ./$filename.temp1.sh
+		rm -f ./$filename.temp2.sh ./$filename.temp1.sh
+		echo "error: Failed to capture script from SSC binary (possibly protected with -u flag or segmented with -S)"
+		return 1
 	fi
 }
 
@@ -329,7 +345,7 @@ init_dec() {
 			PASSED_LOOP=1
 		elif strings ./$filename.temp1.sh | grep -q 'SSC_ARGV0'; then
 			counter=$((counter + 1))
-			echo "Layer $counter: ssc"
+			echo "Layer $counter: SSC (Simple Script Compiler)"
 			decrypt_ssc
 			PASSED_LOOP=1
 		elif strings ./$filename.temp1.sh | grep -q 'E:\sneither\sargv\[0\]\snor\s\$_\sworks\.'; then
